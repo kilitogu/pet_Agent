@@ -1,0 +1,76 @@
+# 一键起：MySQL + 后端 + 前端(nginx)
+#
+# 用法：
+#   1) 在项目根目录建 .env（参考 .env.example），填好密钥
+#   2) docker compose up -d --build
+#   3) 浏览器打开 http://<服务器公网IP>
+#
+# 说明：
+#   - 只有 frontend 对外暴露端口，backend / mysql 只在 compose 内网可见
+#   - nginx 负责把 /api 与 /uploads 反代到 backend，前端代码里用相对路径即可
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 设置 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: pet_db
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/pet_db?charset=utf8mb4
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?请在 .env 设置 JWT_SECRET_KEY}
+      JWT_EXPIRE_HOURS: 24
+      JWT_ALGORITHM: HS256
+      DEEPSEEK_KEY: ${DEEPSEEK_KEY:?请在 .env 设置 DEEPSEEK_KEY}
+      DEEPSEEK_URL: https://api.deepseek.com
+      DEEPSEEK_MODEL: deepseek-chat
+      AGENT_MAX_STEPS: 5
+      AGENT_HISTORY_LIMIT: 12
+      RAG_TOP_K: 4
+      RAG_MIN_SCORE: 0.35
+      EMBEDDING_MODEL: BAAI/bge-small-zh-v1.5
+      LOG_LEVEL: INFO
+      # 线上域名，多个用逗号分隔
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      TZ: Asia/Shanghai
+    volumes:
+      # 上传文件与向量索引必须持久化，否则每次重建容器就丢
+      - uploads:/app/uploads
+      - chroma:/app/data/chroma
+      - kb:/app/data/kb
+      # 缓存 embedding 模型，避免每次重建都重新下载
+      - hf_cache:/app/.cache/huggingface
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${WEB_PORT:-80}:80"
+
+volumes:
+  mysql_data:
+  uploads:
+  chroma:
+  kb:
+  hf_cache:

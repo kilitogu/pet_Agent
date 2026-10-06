@@ -1,0 +1,19 @@
+# 不要把本地环境、密钥、运行期数据打进镜像
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+.env
+*.env
+!.env.example
+
+data/chroma/
+uploads/
+*.sqlite3
+*.db
+
+tests/
+Dockerfile
+.dockerignore
